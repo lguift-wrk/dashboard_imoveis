@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard de imóveis de leilão - Caixa</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Dashboard de imóveis de leilão - Caixa</h1>
+    <div id="contador">0 imóveis</div>
+  </header>
+
+  <div class="layout">
+    <div class="container">
+      <aside class="sidebar">
+        <button class="botao-limpar" onclick="limparFiltros()">Limpar filtros</button>
+        <div id="filtros"></div>
+      </aside>
+
+      <main class="conteudo">
+        <div class="tabela-container">
+          <table id="tabela">
+            <thead>
+              <tr>
+                <th>Endereço Mapa</th>
+                <th>Valor de avaliação</th>
+                <th>Preço</th>
+                <th>Desconto</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div id="paginador">
+            <button id="anterior" onclick="paginaAnterior()">Anterior</button>
+            <span id="pagina-info" style="margin: 0 10px;"></span>
+            <button id="proximo" onclick="proximaPagina()">Próximo</button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <aside class="anuncios">
+      <div class="anuncio">Anúncio 1</div>
+      <div class="anuncio">Anúncio 2</div>
+      <div class="anuncio">Anúncio 3</div>
+      <div class="anuncio">Anúncio 4</div>
+      <div class="anuncio">Anúncio 5</div>
+    </aside>
+  </div>
+
+  <script>
+    const imoveisOriginais = {{ imoveis|tojson }};
+    let paginaAtual = 1;
+    const itensPorPagina = 20;
+    const ordemFiltros = ['UF', 'Cidade', 'Bairro', 'Tipo Imóvel', 'Quartos', 'Vagas', 'Faixa Preço', 'Faixa Desconto'];
+    let filtrosSelecionados = {};
+    let buscaCidade = '';
+    let buscaBairro = '';
+
+    function limparFiltros() {
+      filtrosSelecionados = {};
+      buscaCidade = '';
+      buscaBairro = '';
+      paginaAtual = 1;
+      atualizarInterface();
+    }
+
+    function aplicarFiltros(imovel) {
+      for (const campo in filtrosSelecionados) {
+        const valorImovel = String(imovel[campo] || '');
+        const valoresSelecionados = filtrosSelecionados[campo];
+        if (valoresSelecionados.length > 0 && !valoresSelecionados.includes(valorImovel)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function atualizarInterface() {
+      const filtrados = imoveisOriginais.filter(aplicarFiltros);
+      atualizarFiltros(filtrados);
+      atualizarTabela(filtrados);
+    }
+
+    function atualizarCheckboxes(campo, lista, box) {
+      box.innerHTML = '';
+      lista.forEach(valor => {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = valor;
+        checkbox.name = campo;
+
+        if (!filtrosSelecionados[campo]) filtrosSelecionados[campo] = [];
+        checkbox.checked = filtrosSelecionados[campo].includes(valor);
+
+        checkbox.onchange = () => {
+          const selecionados = document.querySelectorAll(`input[name="${campo}"]:checked`);
+          filtrosSelecionados[campo] = Array.from(selecionados).map(cb => cb.value);
+          paginaAtual = 1;
+          atualizarInterface();
+        };
+
+        const lbl = document.createElement('label');
+        lbl.appendChild(checkbox);
+        lbl.appendChild(document.createTextNode(' ' + valor));
+        box.appendChild(lbl);
+      });
+    }
+
+    function atualizarFiltros(imoveisFiltrados) {
+      const container = document.getElementById('filtros');
+      container.innerHTML = '';
+
+      ordemFiltros.forEach(campo => {
+        const valoresUnicos = [...new Set(imoveisFiltrados.map(i => String(i[campo])))].sort();
+        let valoresFiltrados = valoresUnicos;
+
+        const div = document.createElement('div');
+        div.className = 'filtro';
+
+        const label = document.createElement('label');
+        label.textContent = campo;
+        div.appendChild(label);
+
+        const box = document.createElement('div');
+        box.className = 'checkboxes';
+
+        if (campo === 'Cidade') {
+          const buscaInput = document.createElement('input');
+          buscaInput.type = 'text';
+          buscaInput.placeholder = 'Buscar cidade...';
+          buscaInput.className = 'busca-cidade';
+          buscaInput.value = buscaCidade;
+          buscaInput.oninput = () => {
+            buscaCidade = buscaInput.value.trim().toUpperCase();
+            valoresFiltrados = valoresUnicos.filter(v => v.includes(buscaCidade));
+            atualizarCheckboxes(campo, valoresFiltrados, box);
+          };
+          div.appendChild(buscaInput);
+        }
+
+        if (campo === 'Bairro') {
+          const buscaInput = document.createElement('input');
+          buscaInput.type = 'text';
+          buscaInput.placeholder = 'Buscar bairro...';
+          buscaInput.className = 'busca-bairro';
+          buscaInput.value = buscaBairro;
+          buscaInput.oninput = () => {
+            buscaBairro = buscaInput.value.trim().toUpperCase();
+            valoresFiltrados = valoresUnicos.filter(v => v.includes(buscaBairro));
+            atualizarCheckboxes(campo, valoresFiltrados, box);
+          };
+          div.appendChild(buscaInput);
+        }
+
+        atualizarCheckboxes(campo, valoresFiltrados, box);
+        div.appendChild(box);
+        container.appendChild(div);
+      });
+    }
+
+    function atualizarTabela(imoveisFiltrados) {
+      const corpo = document.querySelector('#tabela tbody');
+      corpo.innerHTML = '';
+
+      const total = imoveisFiltrados.length;
+      const inicio = (paginaAtual - 1) * itensPorPagina;
+      const pagina = imoveisFiltrados.slice(inicio, inicio + itensPorPagina);
+
+      pagina.forEach(imovel => {
+        const tr = document.createElement('tr');
+
+        ['Endereço Mapa', 'Valor de avaliação', 'Preço', 'Desconto ok'].forEach(campo => {
+          const td = document.createElement('td');
+
+          if (campo === 'Endereço Mapa') {
+            const endereco = imovel[campo] || '';
+            const link = document.createElement('a');
+            link.href = `https://www.google.com/maps/search/?q=${encodeURIComponent(endereco)}`;
+            link.textContent = endereco;
+            link.target = '_blank';
+            td.appendChild(link);
+          } else {
+            td.textContent = imovel[campo] || '';
+          }
+
+          tr.appendChild(td);
+        });
+
+        const link = document.createElement('td');
+        const a = document.createElement('a');
+        a.href = imovel['Link'] || '#';
+        a.textContent = 'Ver';
+        a.target = '_blank';
+        link.appendChild(a);
+        tr.appendChild(link);
+
+        corpo.appendChild(tr);
+      });
+
+      const totalPaginas = Math.ceil(total / itensPorPagina);
+      document.getElementById('contador').textContent = `${total} imóveis`;
+      document.getElementById('pagina-info').textContent = `Página ${paginaAtual} de ${totalPaginas}`;
+      document.getElementById('anterior').disabled = paginaAtual === 1;
+      document.getElementById('proximo').disabled = paginaAtual * itensPorPagina >= total;
+    }
+
+    function paginaAnterior() {
+      if (paginaAtual > 1) {
+        paginaAtual--;
+        atualizarInterface();
+      }
+    }
+
+    function proximaPagina() {
+      const filtrados = imoveisOriginais.filter(aplicarFiltros);
+      if (paginaAtual * itensPorPagina < filtrados.length) {
+        paginaAtual++;
+        atualizarInterface();
+      }
+    }
+
+    atualizarInterface();
+  </script>
+</body>
+</html>
